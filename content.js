@@ -58,9 +58,83 @@
     html.classList.toggle('stealth-hide-images', !!value);
   }
 
+  // ----------------------------------------------------------------
+  // Keep new-tab navigation inside the current pane.
+  // Activated only after we know we're inside the splitter (handshake).
+  // ----------------------------------------------------------------
+  let insideSplitter = false;
+
+  function isNewTabTarget(t) {
+    if (!t) return false;
+    const v = String(t).toLowerCase();
+    return v === '_blank' || v === '_new';
+  }
+
+  function navigateHere(url) {
+    if (!url) return;
+    try { window.location.href = url; } catch (_) { /* ignore */ }
+  }
+
+  function installInterceptors() {
+    if (insideSplitter) return;
+    insideSplitter = true;
+
+    // <a target="_blank"> clicks
+    document.addEventListener('click', (e) => {
+      if (e.defaultPrevented) return;
+      const a = e.target && e.target.closest && e.target.closest('a[href]');
+      if (!a) return;
+      if (isNewTabTarget(a.getAttribute('target'))) {
+        e.preventDefault();
+        e.stopPropagation();
+        navigateHere(a.href);
+      }
+    }, true);
+
+    // Middle-click (button === 1) on links → also opens a new tab by default
+    document.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      const a = e.target && e.target.closest && e.target.closest('a[href]');
+      if (!a) return;
+      e.preventDefault();
+      e.stopPropagation();
+      navigateHere(a.href);
+    }, true);
+
+    // <form target="_blank"> submit → rewrite to same-frame
+    document.addEventListener('submit', (e) => {
+      const form = e.target;
+      if (form && isNewTabTarget(form.target)) {
+        form.target = '_self';
+      }
+    }, true);
+
+    // Override window.open in the page's main world via injected <script>.
+    // Content scripts run in an isolated world, so we must inject inline to
+    // affect the page's own JavaScript calls.
+    try {
+      const code = '(function(){' +
+        'var _open=window.open;' +
+        'window.open=function(url){' +
+          'if(url&&typeof url==="string"){' +
+            'try{window.location.href=url;}catch(e){}' +
+            'return null;' +
+          '}' +
+          'return _open.apply(this,arguments);' +
+        '};' +
+      '})();';
+      const s = document.createElement('script');
+      s.textContent = code;
+      (document.head || document.documentElement || document).appendChild(s);
+      s.remove();
+    } catch (_) { /* ignore — CSP might still block in rare cases */ }
+  }
+
   window.addEventListener('message', (e) => {
     const data = e.data;
     if (!data || data[TAG] !== true) return;
+    // Any tagged message from the parent means we're in the splitter.
+    installInterceptors();
     if (data.type === 'apply') {
       applyHideImages(data.hideImages);
     }
