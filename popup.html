@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>Stealth Split</h1>
+
+  <button id="openSplit" class="primary">分割画面を開く</button>
+
+  <div class="group">
+    <label class="row">
+      <input type="checkbox" id="adBlock">
+      <span>広告ブロック</span>
+    </label>
+    <label class="row">
+      <input type="checkbox" id="frameUnblock">
+      <span>iframe制限解除</span>
+    </label>
+  </div>
+
+  <button id="openOpts" class="secondary">オプション設定 / ブックマーク管理...</button>
+
+  <div class="shortcuts">
+    <div class="title">ショートカット</div>
+    <ul>
+      <li><kbd>Alt+X</kbd> 分割画面を開く</li>
+      <li><kbd>Alt+C</kbd> 左ペインを隠す/復元</li>
+      <li><kbd>Alt+V</kbd> 右ペインを隠す/復元</li>
+      <li><kbd>Alt+M</kbd> モノクロ表示トグル (全タブ)</li>
+    </ul>
+    <div class="note">変更は <code>edge://extensions/shortcuts</code> から</div>
+  </div>
+
+  <div class="info">
+    モノクロ / 画像非表示 はペインごとに上部の <b>M</b> / <b>I</b> ボタンで切替
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

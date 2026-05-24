@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Split</title>
+  <link rel="stylesheet" href="splitter.css">
+</head>
+<body>
+  <nav id="bookmarkBar" class="bookmark-bar">
+    <div id="bookmarks" class="bookmarks"></div>
+    <button id="openOptions" class="bm-options" title="ブックマーク・既定サイトを編集">⚙</button>
+  </nav>
+
+  <main class="split-area">
+    <section class="pane" id="leftPane" data-side="left">
+      <header class="bar">
+        <button class="nav" data-act="back" data-side="left" title="戻る">◀</button>
+        <button class="nav" data-act="forward" data-side="left" title="進む">▶</button>
+        <button class="nav" data-act="reload" data-side="left" title="再読込">⟳</button>
+        <input class="url" type="text" id="leftUrl" placeholder="URLまたは検索語" spellcheck="false">
+        <button class="go" data-side="left" title="移動">→</button>
+        <button class="toggle mono" data-side="left" title="モノクロ表示 ON/OFF">M</button>
+        <button class="toggle imgs" data-side="left" title="画像非表示 ON/OFF">I</button>
+        <button class="close" data-side="left" title="このペインを隠す (Shift+C)">×</button>
+      </header>
+      <div class="frame-wrap">
+        <iframe id="leftFrame" referrerpolicy="no-referrer"
+                sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-presentation"></iframe>
+      </div>
+    </section>
+
+    <div class="divider" id="divider"></div>
+
+    <section class="pane" id="rightPane" data-side="right">
+      <header class="bar">
+        <button class="nav" data-act="back" data-side="right" title="戻る">◀</button>
+        <button class="nav" data-act="forward" data-side="right" title="進む">▶</button>
+        <button class="nav" data-act="reload" data-side="right" title="再読込">⟳</button>
+        <input class="url" type="text" id="rightUrl" placeholder="URLまたは検索語" spellcheck="false">
+        <button class="go" data-side="right" title="移動">→</button>
+        <button class="toggle mono" data-side="right" title="モノクロ表示 ON/OFF">M</button>
+        <button class="toggle imgs" data-side="right" title="画像非表示 ON/OFF">I</button>
+        <button class="close" data-side="right" title="このペインを隠す (Shift+V)">×</button>
+      </header>
+      <div class="frame-wrap">
+        <iframe id="rightFrame" referrerpolicy="no-referrer"
+                sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-presentation"></iframe>
+      </div>
+    </section>
+  </main>
+
+  <script src="splitter.js"></script>
+</body>
+</html>

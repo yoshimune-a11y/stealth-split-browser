@@ -1,0 +1,149 @@
+/* ============================================================
+   Global monochrome: applied to any tab when the user presses
+   the Alt+M shortcut. Storage-driven (globalMonochrome).
+   ============================================================ */
+html.stealth-monochrome {
+  filter: grayscale(100%) !important;
+}
+
+
+/* ============================================================
+   Image hiding: only applied when parent splitter sends an
+   "apply" message via postMessage. Other tabs unaffected.
+   ============================================================ */
+html.stealth-hide-images img,
+html.stealth-hide-images picture,
+html.stealth-hide-images video,
+html.stealth-hide-images svg,
+html.stealth-hide-images canvas,
+html.stealth-hide-images object,
+html.stealth-hide-images embed {
+  display: none !important;
+}
+
+html.stealth-hide-images [style*="background-image"] {
+  background-image: none !important;
+}
+
+
+/* ============================================================
+   Cosmetic ad filter: hides ad containers that URL blocking
+   cannot catch (first-party served, inline HTML, etc.).
+   Applied globally when the adBlock toggle is on.
+   ============================================================ */
+
+/* --- ID-based --- */
+html.stealth-adblock [id^="ad-"],
+html.stealth-adblock [id^="ad_"],
+html.stealth-adblock [id^="ads-"],
+html.stealth-adblock [id^="ads_"],
+html.stealth-adblock [id^="google_ads"],
+html.stealth-adblock [id^="div-gpt-ad"],
+html.stealth-adblock [id*="-ad-"],
+html.stealth-adblock [id*="_ad_"],
+html.stealth-adblock [id*="-ads-"],
+html.stealth-adblock [id*="_ads_"],
+html.stealth-adblock [id$="-ad"],
+html.stealth-adblock [id$="_ad"],
+html.stealth-adblock [id$="-ads"],
+html.stealth-adblock [id$="_ads"],
+html.stealth-adblock [id*="advert"],
+html.stealth-adblock [id*="adsense"],
+html.stealth-adblock [id*="sponsor"],
+
+/* --- Class-based (conservative, avoid "banner" alone) --- */
+html.stealth-adblock [class^="ad-"],
+html.stealth-adblock [class^="ad_"],
+html.stealth-adblock [class^="ads-"],
+html.stealth-adblock [class^="ads_"],
+html.stealth-adblock [class*=" ad-"],
+html.stealth-adblock [class*=" ad_"],
+html.stealth-adblock [class*=" ads-"],
+html.stealth-adblock [class*=" ads_"],
+html.stealth-adblock [class*="-ad-"],
+html.stealth-adblock [class*="_ad_"],
+html.stealth-adblock [class*="-ads-"],
+html.stealth-adblock [class*="_ads_"],
+html.stealth-adblock [class$=" ad"],
+html.stealth-adblock [class$=" ads"],
+html.stealth-adblock [class$="-ad"],
+html.stealth-adblock [class$="_ad"],
+html.stealth-adblock [class$="-ads"],
+html.stealth-adblock [class$="_ads"],
+html.stealth-adblock [class*="advert"],
+html.stealth-adblock [class*="adsense"],
+html.stealth-adblock [class*="adsbygoogle"],
+html.stealth-adblock [class*="sponsor"],
+html.stealth-adblock [class*="promoted"],
+html.stealth-adblock [class*="banner-ad"],
+html.stealth-adblock [class*="ad-banner"],
+html.stealth-adblock [class*="adslot"],
+html.stealth-adblock [class*="ad-slot"],
+html.stealth-adblock [class*="ad_slot"],
+html.stealth-adblock [class*="ad-block"],
+html.stealth-adblock [class*="googleAd"],
+
+/* --- Common literal names --- */
+html.stealth-adblock .adsbygoogle,
+html.stealth-adblock ins.adsbygoogle,
+html.stealth-adblock .advertisement,
+html.stealth-adblock .ad-container,
+html.stealth-adblock .ad-wrapper,
+html.stealth-adblock .ad-banner,
+html.stealth-adblock .ad-area,
+html.stealth-adblock .ad-section,
+html.stealth-adblock .ad-block,
+html.stealth-adblock .ad-zone,
+html.stealth-adblock .sponsored,
+html.stealth-adblock .sponsored-link,
+html.stealth-adblock .sponsored-post,
+html.stealth-adblock .sponsored-content,
+html.stealth-adblock .promoted-link,
+html.stealth-adblock .promoted-tweet,
+html.stealth-adblock .promoted-post,
+
+/* --- data-* attributes (AdSense / GPT) --- */
+html.stealth-adblock [data-ad],
+html.stealth-adblock [data-ad-slot],
+html.stealth-adblock [data-ad-client],
+html.stealth-adblock [data-ad-format],
+html.stealth-adblock [data-google-query-id],
+html.stealth-adblock [data-ad-unit-id],
+html.stealth-adblock [data-adsbygoogle-status],
+
+/* --- iframe by src/id/name --- */
+html.stealth-adblock iframe[src*="ads."],
+html.stealth-adblock iframe[src*="/ads/"],
+html.stealth-adblock iframe[src*="adserv"],
+html.stealth-adblock iframe[src*="adservice"],
+html.stealth-adblock iframe[src*="doubleclick"],
+html.stealth-adblock iframe[src*="googleads"],
+html.stealth-adblock iframe[src*="googlesyndication"],
+html.stealth-adblock iframe[src*="googletagservices"],
+html.stealth-adblock iframe[src*="pagead"],
+html.stealth-adblock iframe[id*="google_ads"],
+html.stealth-adblock iframe[name*="google_ads"],
+html.stealth-adblock iframe[id^="aswift_"],
+
+/* --- Japanese / aria labels --- */
+html.stealth-adblock [aria-label*="広告"],
+html.stealth-adblock [aria-label*="Advertisement"],
+html.stealth-adblock [aria-label*="Sponsored"] {
+  display: none !important;
+}
+
+/* Common ad iframe sizes (IAB standard) — usually 99% ads */
+html.stealth-adblock iframe[width="300"][height="250"],
+html.stealth-adblock iframe[width="728"][height="90"],
+html.stealth-adblock iframe[width="320"][height="50"],
+html.stealth-adblock iframe[width="320"][height="100"],
+html.stealth-adblock iframe[width="160"][height="600"],
+html.stealth-adblock iframe[width="468"][height="60"],
+html.stealth-adblock iframe[width="970"][height="90"],
+html.stealth-adblock iframe[width="970"][height="250"],
+html.stealth-adblock iframe[width="336"][height="280"],
+html.stealth-adblock iframe[width="300"][height="600"],
+html.stealth-adblock iframe[width="250"][height="250"],
+html.stealth-adblock iframe[width="200"][height="200"] {
+  display: none !important;
+}

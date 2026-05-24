@@ -1,0 +1,22 @@
+# Microsoft Edge / Chrome unpacked extension artifacts
+_metadata/
+*.crx
+*.pem
+*.zip
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*

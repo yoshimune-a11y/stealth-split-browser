@@ -1,0 +1,150 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: -apple-system, "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
+  background: #fff;
+  color: #222;
+}
+body { display: flex; flex-direction: column; }
+
+/* -------------------- Bookmark bar -------------------- */
+.bookmark-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: #ececec;
+  border-bottom: 1px solid #c8c8c8;
+  flex-shrink: 0;
+  min-height: 32px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.bookmarks { display: flex; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.bookmark {
+  padding: 3px 10px;
+  border: 1px solid #c0c0c0;
+  background: #fff;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #333;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bookmark:hover { background: #f4f8ff; border-color: #6aa1d8; }
+.bookmark:empty::before { content: "(無題)"; color: #888; }
+.bm-options {
+  padding: 3px 8px;
+  border: 1px solid #c0c0c0;
+  background: #fff;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.bm-options:hover { background: #ececec; }
+.bookmark-bar .empty-hint {
+  font-size: 11px;
+  color: #888;
+  padding: 0 6px;
+}
+
+/* -------------------- Split area -------------------- */
+.split-area {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.pane {
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-top: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+.pane.hidden { display: none; }
+.pane.full { flex: 1 1 100%; }
+.pane.active { border-top-color: #0078d4; }
+
+.bar {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  gap: 3px;
+  background: #f4f4f4;
+  border-bottom: 1px solid #d0d0d0;
+  flex-shrink: 0;
+}
+.pane.active .bar { background: #e6f1fb; }
+
+.url {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #c8c8c8;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  min-width: 0;
+}
+.url:focus { outline: 1px solid #888; }
+
+.nav, .go, .close, .toggle {
+  padding: 4px 8px;
+  border: 1px solid #c8c8c8;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  color: #333;
+  min-width: 26px;
+}
+.nav:hover, .go:hover, .close:hover, .toggle:hover { background: #ececec; }
+.close { color: #b00; font-weight: bold; }
+.toggle {
+  font-weight: 600;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+}
+.toggle.active {
+  background: #0078d4;
+  color: #fff;
+  border-color: #0078d4;
+}
+.toggle.active:hover { background: #106ebe; }
+
+.frame-wrap {
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: #fff;
+  position: relative;
+  min-height: 0;
+}
+iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #fff;
+  /* filter is applied per-side from JS for monochrome */
+  transition: filter 0.2s;
+}
+
+.divider {
+  width: 5px;
+  background: #cfcfcf;
+  cursor: ew-resize;
+  flex-shrink: 0;
+}
+.divider:hover { background: #aaa; }
+.divider.hidden { display: none; }
+
+/* Global monochrome (Alt+M) applies to the splitter chrome itself */
+html.stealth-monochrome { filter: grayscale(100%); }

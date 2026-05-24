@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Stealth Split — オプション</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Stealth Split — オプション</h1>
+
+    <section>
+      <h2>デフォルトサイト</h2>
+      <p class="hint">分割画面を最初に開いたときに表示するURL。履歴が残っている場合はそちらが優先されます。</p>
+      <label class="field">
+        <span>左ペイン</span>
+        <input type="text" id="defaultLeftUrl" placeholder="https://www.bing.com">
+      </label>
+      <label class="field">
+        <span>右ペイン</span>
+        <input type="text" id="defaultRightUrl" placeholder="https://ja.wikipedia.org">
+      </label>
+      <button id="resetState" class="ghost">保存済みの分割状態をリセットしてデフォルトに戻す</button>
+    </section>
+
+    <section>
+      <h2>ブックマーク</h2>
+      <p class="hint">分割画面の上部バーに並び、クリックすると<strong>アクティブなペイン</strong>で開きます。</p>
+      <table class="bm-table">
+        <thead>
+          <tr><th style="width:30%">タイトル</th><th>URL</th><th style="width:90px"></th></tr>
+        </thead>
+        <tbody id="bmTbody"></tbody>
+      </table>
+      <div class="add-row">
+        <input type="text" id="newBmTitle" placeholder="タイトル (例: 仕様書)">
+        <input type="text" id="newBmUrl" placeholder="https://...">
+        <button id="addBm" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>ネットワーク</h2>
+      <label class="row">
+        <input type="checkbox" id="adBlock">
+        <span>広告ブロック (declarativeNetRequest)</span>
+      </label>
+      <label class="row">
+        <input type="checkbox" id="frameUnblock">
+        <span>iframe制限解除 — X-Frame-Options / CSP を除去 (分割画面で多くのサイトを表示するために必要)</span>
+      </label>
+    </section>
+
+    <section>
+      <h2>ショートカット</h2>
+      <ul class="shortcut-list">
+        <li><kbd>Alt</kbd>+<kbd>X</kbd> &nbsp; 分割画面を開く</li>
+        <li><kbd>Alt</kbd>+<kbd>C</kbd> &nbsp; 左ペインを隠す / 復元</li>
+        <li><kbd>Alt</kbd>+<kbd>V</kbd> &nbsp; 右ペインを隠す / 復元</li>
+        <li><kbd>Alt</kbd>+<kbd>M</kbd> &nbsp; モノクロ表示をトグル <strong>（全タブ対象）</strong></li>
+      </ul>
+      <p class="hint">入力欄にフォーカスがあっても発動します。<br>キー変更は <code>edge://extensions/shortcuts</code> から可能です。</p>
+    </section>
+
+    <div id="status" class="status"></div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>
