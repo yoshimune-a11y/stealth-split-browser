@@ -146,5 +146,44 @@ iframe {
 .divider:hover { background: #aaa; }
 .divider.hidden { display: none; }
 
-/* Global monochrome (Alt+M) applies to the splitter chrome itself */
-html.stealth-monochrome { filter: grayscale(100%); }
+/* ===========================================================
+   Global monochrome (Alt+M) — applies to the splitter chrome.
+   Backgrounds become pure white; text uses --stealth-text-color
+   (set from JS, default #808080).
+   =========================================================== */
+html.stealth-monochrome {
+  background-color: #ffffff !important;
+  color: var(--stealth-text-color, #808080) !important;
+}
+
+html.stealth-monochrome body,
+html.stealth-monochrome *,
+html.stealth-monochrome *::before,
+html.stealth-monochrome *::after {
+  background-color: transparent !important;
+  background-image: none !important;
+  color: inherit !important;
+  border-color: currentColor !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+/* Keep the divider visible as a thin translucent line */
+html.stealth-monochrome .divider {
+  background-color: currentColor !important;
+  opacity: 0.35;
+}
+
+/* Keep active-pane indicator visible (small underline on the bar) */
+html.stealth-monochrome .pane.active .bar {
+  border-bottom-width: 2px !important;
+}
+
+/* Active toggle buttons: distinguish via bold + underline since color is gone */
+html.stealth-monochrome .toggle.active {
+  font-weight: 900 !important;
+  text-decoration: underline !important;
+}
+
+/* Iframes inside the splitter handle their own monochrome via content.js,
+   so we don't grayscale them again here (would double-apply). */

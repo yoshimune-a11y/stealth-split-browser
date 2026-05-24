@@ -40,6 +40,17 @@
     </section>
 
     <section>
+      <h2>モノクロ表示の文字色</h2>
+      <p class="hint">モノクロ機能 (Alt+M または各ペインの M ボタン) で背景は常に純白、文字色のみここで調整できます。</p>
+      <div class="color-row">
+        <input type="color" id="monoTextColor" value="#808080">
+        <input type="text" id="monoTextColorHex" placeholder="#808080" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$">
+        <button id="resetTextColor" class="ghost">既定 (#808080)</button>
+        <span id="monoTextPreview" class="mono-preview">サンプル テキスト</span>
+      </div>
+    </section>
+
+    <section>
       <h2>ネットワーク</h2>
       <label class="row">
         <input type="checkbox" id="adBlock">

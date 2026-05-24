@@ -119,6 +119,41 @@ section {
   margin-top: 6px;
 }
 .ghost:hover { background: #f4f4f4; }
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.color-row input[type="color"] {
+  width: 50px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #fff;
+}
+.color-row input[type="text"] {
+  width: 110px;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+.color-row input[type="text"]:invalid {
+  border-color: #b00;
+  background: #fff5f5;
+}
+.mono-preview {
+  background: #ffffff;
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-left: auto;
+}
 .shortcut-list { list-style: none; padding: 0; margin: 0; }
 .shortcut-list li { padding: 4px 0; font-size: 13px; }
 .hint code {

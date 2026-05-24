@@ -1,8 +1,35 @@
 /* ============================================================
-   Global monochrome: applied to any tab when the user presses
-   the Alt+M shortcut. Storage-driven (globalMonochrome).
+   Monochrome rendering:
+     - all backgrounds become pure white
+     - all text becomes the user-chosen color (default gray)
+     - media (img/video/svg/canvas) are desaturated
+   The text color is supplied via the CSS custom property
+   --stealth-text-color (set from JS based on storage).
+   Activated when <html> has the .stealth-monochrome class.
    ============================================================ */
 html.stealth-monochrome {
+  background-color: #ffffff !important;
+  color: var(--stealth-text-color, #808080) !important;
+}
+
+html.stealth-monochrome body,
+html.stealth-monochrome *,
+html.stealth-monochrome *::before,
+html.stealth-monochrome *::after {
+  background-color: transparent !important;
+  background-image: none !important;
+  color: inherit !important;
+  border-color: currentColor !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+html.stealth-monochrome img,
+html.stealth-monochrome picture,
+html.stealth-monochrome video,
+html.stealth-monochrome svg,
+html.stealth-monochrome canvas,
+html.stealth-monochrome iframe {
   filter: grayscale(100%) !important;
 }
 
