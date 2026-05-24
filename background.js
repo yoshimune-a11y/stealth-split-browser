@@ -5,6 +5,7 @@ const DEFAULTS = {
   adBlock: true,
   frameUnblock: true,
   globalMonochrome: false,
+  monoTextColor: '#808080',
   defaultLeftUrl: 'https://www.bing.com',
   defaultRightUrl: 'https://ja.wikipedia.org',
   bookmarks: []

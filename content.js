@@ -2,42 +2,53 @@
  * Runs on every page (including inside splitter iframes).
  *
  * Responsibilities:
- *   1. Toggle a `.stealth-adblock` class on <html> based on the adBlock
- *      setting. This enables the cosmetic CSS filter (content.css) which
- *      hides ad containers that URL blocking can't catch.
- *      Applied to all tabs — adBlock is a global feature.
+ *   1. Toggle `.stealth-adblock` on <html> based on the adBlock storage flag
+ *      (global feature, applies to all tabs).
+ *   2. Toggle `.stealth-monochrome` on <html> based on EITHER the global
+ *      monochrome flag (storage) OR a per-pane flag pushed from the splitter
+ *      via postMessage. Apply the user-chosen text color as a CSS variable.
+ *   3. Toggle `.stealth-hide-images` only when the splitter parent sends
+ *      a postMessage `apply` event (scoped to splitter iframes only).
+ *   4. Keep new-tab navigation inside the current pane (link clicks,
+ *      middle-clicks, form submits, and window.open).
  *
- *   2. Listen for postMessage from the splitter parent to toggle image
- *      hiding. Monochrome is applied at the iframe element level by the
- *      parent — no injection needed inside the iframe. Image-hide and
- *      monochrome are scoped to splitter only.
- *
- * Keyboard shortcuts (Alt+X / Alt+C / Alt+V) are handled by the native
- * chrome.commands API in background.js.
+ * Keyboard shortcuts are handled by the native chrome.commands API in
+ * background.js, not here.
  */
 (function () {
   const TAG = '__stealthSplit';
 
-  // ----------------------------------------------------------------
-  // Storage-driven globals: cosmetic ad blocking + global monochrome
-  // ----------------------------------------------------------------
+  // --------------------------- State -----------------------------------------
+  let globalMonoOn = false;
+  let paneMonoOn = false;
+  let textColor = '#808080';
+
+  function applyMonoState() {
+    const html = document.documentElement;
+    if (!html) return;
+    html.style.setProperty('--stealth-text-color', textColor);
+    html.classList.toggle('stealth-monochrome', globalMonoOn || paneMonoOn);
+  }
+
   function applyAdBlock(enabled) {
     const html = document.documentElement;
     if (!html) return;
     html.classList.toggle('stealth-adblock', !!enabled);
   }
 
-  function applyMonochrome(enabled) {
+  function applyHideImages(value) {
     const html = document.documentElement;
     if (!html) return;
-    html.classList.toggle('stealth-monochrome', !!enabled);
+    html.classList.toggle('stealth-hide-images', !!value);
   }
 
+  // -------------------- Storage-driven globals -------------------------------
   try {
-    chrome.storage.local.get(['adBlock', 'globalMonochrome'], (st) => {
-      // adBlock defaults to true if unset (matches background DEFAULTS)
+    chrome.storage.local.get(['adBlock', 'globalMonochrome', 'monoTextColor'], (st) => {
       applyAdBlock(st.adBlock !== false);
-      applyMonochrome(!!st.globalMonochrome);
+      globalMonoOn = !!st.globalMonochrome;
+      if (st.monoTextColor) textColor = st.monoTextColor;
+      applyMonoState();
     });
   } catch (_) { /* extension context invalidated — ignore */ }
 
@@ -45,23 +56,18 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if ('adBlock' in changes) applyAdBlock(!!changes.adBlock.newValue);
-      if ('globalMonochrome' in changes) applyMonochrome(!!changes.globalMonochrome.newValue);
+      if ('globalMonochrome' in changes) {
+        globalMonoOn = !!changes.globalMonochrome.newValue;
+        applyMonoState();
+      }
+      if ('monoTextColor' in changes) {
+        textColor = changes.monoTextColor.newValue || '#808080';
+        applyMonoState();
+      }
     });
   } catch (_) { /* ignore */ }
 
-  // ----------------------------------------------------------------
-  // Image hiding — only when parent splitter sends an apply message
-  // ----------------------------------------------------------------
-  function applyHideImages(value) {
-    const html = document.documentElement;
-    if (!html) return;
-    html.classList.toggle('stealth-hide-images', !!value);
-  }
-
-  // ----------------------------------------------------------------
-  // Keep new-tab navigation inside the current pane.
-  // Activated only after we know we're inside the splitter (handshake).
-  // ----------------------------------------------------------------
+  // -------------------- New-tab link interception ----------------------------
   let insideSplitter = false;
 
   function isNewTabTarget(t) {
@@ -79,7 +85,6 @@
     if (insideSplitter) return;
     insideSplitter = true;
 
-    // <a target="_blank"> clicks
     document.addEventListener('click', (e) => {
       if (e.defaultPrevented) return;
       const a = e.target && e.target.closest && e.target.closest('a[href]');
@@ -91,7 +96,6 @@
       }
     }, true);
 
-    // Middle-click (button === 1) on links → also opens a new tab by default
     document.addEventListener('auxclick', (e) => {
       if (e.button !== 1) return;
       const a = e.target && e.target.closest && e.target.closest('a[href]');
@@ -101,17 +105,11 @@
       navigateHere(a.href);
     }, true);
 
-    // <form target="_blank"> submit → rewrite to same-frame
     document.addEventListener('submit', (e) => {
       const form = e.target;
-      if (form && isNewTabTarget(form.target)) {
-        form.target = '_self';
-      }
+      if (form && isNewTabTarget(form.target)) form.target = '_self';
     }, true);
 
-    // Override window.open in the page's main world via injected <script>.
-    // Content scripts run in an isolated world, so we must inject inline to
-    // affect the page's own JavaScript calls.
     try {
       const code = '(function(){' +
         'var _open=window.open;' +
@@ -127,16 +125,18 @@
       s.textContent = code;
       (document.head || document.documentElement || document).appendChild(s);
       s.remove();
-    } catch (_) { /* ignore — CSP might still block in rare cases */ }
+    } catch (_) { /* ignore */ }
   }
 
+  // --------------- postMessage from parent splitter --------------------------
   window.addEventListener('message', (e) => {
     const data = e.data;
     if (!data || data[TAG] !== true) return;
-    // Any tagged message from the parent means we're in the splitter.
     installInterceptors();
     if (data.type === 'apply') {
       applyHideImages(data.hideImages);
+      paneMonoOn = !!data.monochrome;
+      applyMonoState();
     }
   });
 

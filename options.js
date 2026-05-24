@@ -1,4 +1,5 @@
-const KEYS = ['defaultLeftUrl', 'defaultRightUrl', 'bookmarks', 'adBlock', 'frameUnblock'];
+const KEYS = ['defaultLeftUrl', 'defaultRightUrl', 'bookmarks', 'adBlock', 'frameUnblock', 'monoTextColor'];
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
 function $(id) { return document.getElementById(id); }
 
@@ -92,12 +93,25 @@ function onBmAdd() {
   showStatus('追加しました');
 }
 
+function applyColorToUi(color) {
+  if (!HEX_RE.test(color)) return;
+  $('monoTextColor').value = color;
+  $('monoTextColorHex').value = color;
+  $('monoTextPreview').style.color = color;
+}
+
+const saveColor = debounce((color) => {
+  chrome.storage.local.set({ monoTextColor: color });
+  showStatus('文字色を保存しました');
+}, 200);
+
 async function init() {
   const data = await chrome.storage.local.get(KEYS);
   $('defaultLeftUrl').value  = data.defaultLeftUrl  || '';
   $('defaultRightUrl').value = data.defaultRightUrl || '';
   $('adBlock').checked       = data.adBlock !== false;
   $('frameUnblock').checked  = data.frameUnblock !== false;
+  applyColorToUi(data.monoTextColor || '#808080');
   bookmarks = Array.isArray(data.bookmarks) ? data.bookmarks : [];
   renderBookmarks();
 }
@@ -136,6 +150,28 @@ function bind() {
     if (!confirm('保存されている分割画面の状態 (URL, 表示/非表示, モノクロ等) をすべてリセットします。よろしいですか?')) return;
     await chrome.storage.local.remove('splitterState');
     showStatus('分割状態をリセットしました');
+  });
+
+  // Monochrome text color: keep color picker + hex input in sync, persist on change
+  $('monoTextColor').addEventListener('input', (e) => {
+    const v = e.target.value;
+    if (!HEX_RE.test(v)) return;
+    $('monoTextColorHex').value = v;
+    $('monoTextPreview').style.color = v;
+    saveColor(v);
+  });
+  $('monoTextColorHex').addEventListener('input', (e) => {
+    let v = e.target.value.trim();
+    if (!v.startsWith('#')) v = '#' + v;
+    if (!HEX_RE.test(v)) return; // wait for valid hex
+    $('monoTextColor').value = v;
+    $('monoTextPreview').style.color = v;
+    saveColor(v);
+  });
+  $('resetTextColor').addEventListener('click', () => {
+    applyColorToUi('#808080');
+    chrome.storage.local.set({ monoTextColor: '#808080' });
+    showStatus('既定の文字色に戻しました');
   });
 }
 

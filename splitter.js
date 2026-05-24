@@ -78,19 +78,16 @@ function applyLayout() {
   }
 }
 
-function applyMonochrome(side) {
-  const frame = $(side + 'Frame');
-  frame.style.filter = state[side].monochrome ? 'grayscale(100%)' : '';
-}
-
-function applyHideImages(side) {
+function pushIframeState(side) {
   if (!frameReady[side]) return; // will re-apply when ready msg arrives
   const frame = $(side + 'Frame');
   try {
-    frame.contentWindow.postMessage(
-      { [TAG]: true, type: 'apply', hideImages: state[side].hideImages },
-      '*'
-    );
+    frame.contentWindow.postMessage({
+      [TAG]: true,
+      type: 'apply',
+      hideImages: state[side].hideImages,
+      monochrome: state[side].monochrome
+    }, '*');
   } catch (_) { /* iframe might not be loaded yet */ }
 }
 
@@ -154,7 +151,8 @@ function loadSide(side, url) {
   $(side + 'Url').value = u;
   frameReady[side] = false;
   $(side + 'Frame').src = u;
-  applyMonochrome(side);
+  // Pane state (monochrome/hideImages) will be pushed when the iframe's
+  // content script announces 'ready' (see the message listener below).
   persist();
 }
 
@@ -167,14 +165,14 @@ function toggleHide(side, force) {
 
 function toggleMonochrome(side) {
   state[side].monochrome = !state[side].monochrome;
-  applyMonochrome(side);
+  pushIframeState(side);
   updateToggleButtons();
   persist();
 }
 
 function toggleHideImages(side) {
   state[side].hideImages = !state[side].hideImages;
-  applyHideImages(side);
+  pushIframeState(side);
   updateToggleButtons();
   persist();
 }
@@ -306,7 +304,7 @@ window.addEventListener('message', (e) => {
     const frame = $(side + 'Frame');
     if (frame && e.source === frame.contentWindow) {
       frameReady[side] = true;
-      applyHideImages(side);
+      pushIframeState(side);
     }
   });
 });
@@ -325,8 +323,15 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // ---------------------------- Storage sync ----------------------------------
 
-function applyGlobalMonochrome(enabled) {
+function applyGlobalMonochrome(enabled, textColor) {
+  if (textColor) {
+    document.documentElement.style.setProperty('--stealth-text-color', textColor);
+  }
   document.documentElement.classList.toggle('stealth-monochrome', !!enabled);
+}
+
+function applyMonoTextColor(textColor) {
+  document.documentElement.style.setProperty('--stealth-text-color', textColor || '#808080');
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -338,16 +343,21 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if ('globalMonochrome' in changes) {
     applyGlobalMonochrome(!!changes.globalMonochrome.newValue);
   }
+  if ('monoTextColor' in changes) {
+    applyMonoTextColor(changes.monoTextColor.newValue);
+  }
 });
 
 // --------------------------------- Boot -------------------------------------
 
 async function init() {
   const data = await chrome.storage.local.get([
-    STATE_KEY, 'bookmarks', 'defaultLeftUrl', 'defaultRightUrl', 'globalMonochrome'
+    STATE_KEY, 'bookmarks', 'defaultLeftUrl', 'defaultRightUrl',
+    'globalMonochrome', 'monoTextColor'
   ]);
   bookmarks = data.bookmarks || [];
-  applyGlobalMonochrome(!!data.globalMonochrome);
+  applyMonoTextColor(data.monoTextColor || '#808080');
+  applyGlobalMonochrome(!!data.globalMonochrome, data.monoTextColor);
 
   const dLeft  = data.defaultLeftUrl  || FALLBACK.defaultLeftUrl;
   const dRight = data.defaultRightUrl || FALLBACK.defaultRightUrl;
@@ -367,8 +377,8 @@ async function init() {
   $('rightFrame').src = state.right.url;
 
   applyLayout();
-  applyMonochrome('left');
-  applyMonochrome('right');
+  // Per-pane monochrome/hideImages are pushed via postMessage once each
+  // iframe content script signals ready (no need to set anything here).
   updateToggleButtons();
   updateActiveBorder();
   renderBookmarks();
