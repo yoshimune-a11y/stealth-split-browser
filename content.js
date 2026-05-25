@@ -128,6 +128,28 @@
     } catch (_) { /* ignore */ }
   }
 
+  // -------------------- Scroll position reporting ----------------------------
+  // Throttled scroll reporter so the splitter knows where to restore to.
+  let scrollReportTimer = null;
+  function reportScroll() {
+    if (window.parent === window) return;
+    try {
+      window.parent.postMessage({
+        [TAG]: true,
+        type: 'scroll',
+        x: window.scrollX,
+        y: window.scrollY
+      }, '*');
+    } catch (_) { /* ignore */ }
+  }
+  document.addEventListener('scroll', () => {
+    if (scrollReportTimer) return;
+    scrollReportTimer = setTimeout(() => {
+      scrollReportTimer = null;
+      reportScroll();
+    }, 180);
+  }, { passive: true, capture: true });
+
   // --------------- postMessage from parent splitter --------------------------
   window.addEventListener('message', (e) => {
     const data = e.data;
@@ -137,16 +159,35 @@
       applyHideImages(data.hideImages);
       paneMonoOn = !!data.monochrome;
       applyMonoState();
+    } else if (data.type === 'restore-scroll') {
+      try { window.scrollTo(data.x || 0, data.y || 0); } catch (_) {}
+    } else if (data.type === 'snapshot-scroll') {
+      // Bypass throttle — report current scroll immediately
+      reportScroll();
     }
   });
 
-  function announceReady() {
+  function postToParent(payload) {
     if (window.parent && window.parent !== window) {
-      try {
-        window.parent.postMessage({ [TAG]: true, type: 'ready' }, '*');
-      } catch (_) { /* ignore */ }
+      try { window.parent.postMessage(payload, '*'); } catch (_) {}
     }
   }
+
+  function announceReady() {
+    postToParent({ [TAG]: true, type: 'ready' });
+  }
+  function announceNavigated() {
+    postToParent({ [TAG]: true, type: 'navigated', url: window.location.href });
+  }
+
   announceReady();
-  document.addEventListener('DOMContentLoaded', announceReady);
+  announceNavigated();
+  document.addEventListener('DOMContentLoaded', () => {
+    announceReady();
+    announceNavigated();
+  });
+
+  // Same-document URL changes (SPA / hash) — best-effort tracking
+  window.addEventListener('hashchange', announceNavigated);
+  window.addEventListener('popstate', announceNavigated);
 })();

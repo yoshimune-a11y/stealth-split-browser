@@ -30,6 +30,20 @@ let state = {
 let bookmarks = [];
 let frameReady = { left: false, right: false };
 
+// Per-pane navigation history (in-memory, not persisted).
+// Maintained because cross-origin iframes don't let us call
+// contentWindow.history.back/forward.
+const histories = {
+  left:  { stack: [], index: -1 },
+  right: { stack: [], index: -1 }
+};
+
+// Latest reported scroll position per pane (used to restore on unhide).
+const paneScroll = {
+  left:  { x: 0, y: 0 },
+  right: { x: 0, y: 0 }
+};
+
 const $ = (id) => document.getElementById(id);
 
 // ----------------------------- Utilities ------------------------------------
@@ -37,7 +51,21 @@ const $ = (id) => document.getElementById(id);
 function normalizeUrl(input) {
   const s = (input || '').trim();
   if (!s) return '';
-  if (/^(https?|ftp|file):\/\//i.test(s)) return s;
+  // Already a fully qualified URL we accept
+  if (/^(https?|ftp|file|about|data):/i.test(s)) return s;
+  // Windows path: C:\foo\bar.pdf or C:/foo/bar.pdf
+  if (/^[a-z]:[\\\/]/i.test(s)) {
+    return 'file:///' + s.replace(/\\/g, '/');
+  }
+  // UNC path: \\server\share\file
+  if (/^\\\\/.test(s)) {
+    return 'file:' + s.replace(/\\/g, '/');
+  }
+  // Unix absolute path
+  if (/^\//.test(s) && !/\s/.test(s)) {
+    return 'file://' + s;
+  }
+  // Domain-like
   if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(s)) return 'https://' + s;
   return 'https://www.bing.com/search?q=' + encodeURIComponent(s);
 }
@@ -151,15 +179,95 @@ function loadSide(side, url) {
   $(side + 'Url').value = u;
   frameReady[side] = false;
   $(side + 'Frame').src = u;
+  pushHistory(side, u);
   // Pane state (monochrome/hideImages) will be pushed when the iframe's
   // content script announces 'ready' (see the message listener below).
   persist();
 }
 
+function pushHistory(side, url) {
+  const h = histories[side];
+  // Skip if URL already matches current entry (e.g. reload)
+  if (h.index >= 0 && h.stack[h.index] === url) return;
+  // Drop any "forward" entries beyond current index
+  h.stack = h.stack.slice(0, h.index + 1);
+  h.stack.push(url);
+  h.index = h.stack.length - 1;
+  if (h.stack.length > 50) {
+    h.stack.shift();
+    h.index--;
+  }
+}
+
+function goBack(side) {
+  const h = histories[side];
+  if (h.index <= 0) return;
+  h.index--;
+  navigateFromHistory(side, h.stack[h.index]);
+}
+
+function goForward(side) {
+  const h = histories[side];
+  if (h.index >= h.stack.length - 1) return;
+  h.index++;
+  navigateFromHistory(side, h.stack[h.index]);
+}
+
+function navigateFromHistory(side, url) {
+  state[side].url = url;
+  $(side + 'Url').value = url;
+  frameReady[side] = false;
+  $(side + 'Frame').src = url;
+  persist();
+}
+
+function reloadSide(side) {
+  const url = state[side].url;
+  if (!url) return;
+  const frame = $(side + 'Frame');
+  // Same-origin pages allow contentWindow.location.reload(); for cross-origin
+  // we fall back to bouncing through about:blank to force a fresh load.
+  try {
+    frame.contentWindow.location.reload();
+  } catch (_) {
+    frame.src = 'about:blank';
+    setTimeout(() => { frame.src = url; }, 30);
+  }
+}
+
+function restoreScroll(side) {
+  const frame = $(side + 'Frame');
+  if (!frame) return;
+  try {
+    frame.contentWindow.postMessage({
+      [TAG]: true,
+      type: 'restore-scroll',
+      x: paneScroll[side].x,
+      y: paneScroll[side].y
+    }, '*');
+  } catch (_) { /* iframe not ready */ }
+}
+
 function toggleHide(side, force) {
   const newVal = (typeof force === 'boolean') ? force : !state[side].hidden;
+  const wasHidden = state[side].hidden;
+  // About to hide: ask the iframe for an immediate scroll snapshot so we have
+  // a fresh value (the throttled reporter may have a stale 180ms delay).
+  if (!wasHidden && newVal) {
+    const frame = $(side + 'Frame');
+    try {
+      frame.contentWindow.postMessage({ [TAG]: true, type: 'snapshot-scroll' }, '*');
+    } catch (_) { /* ignore */ }
+  }
   state[side].hidden = newVal;
   applyLayout();
+  // If transitioning hidden → visible, restore scroll once the layout settles.
+  // The iframe is re-flowed when its container resizes back to non-zero, which
+  // can shift the visible scroll position; we push the saved value back.
+  if (wasHidden && !newVal) {
+    setTimeout(() => restoreScroll(side), 80);
+    setTimeout(() => restoreScroll(side), 250); // belt-and-suspenders for slow reflows
+  }
   persist();
 }
 
@@ -212,14 +320,9 @@ function bind() {
     btn.addEventListener('click', () => {
       const side = btn.dataset.side;
       const act = btn.dataset.act;
-      const frame = $(side + 'Frame');
-      try {
-        if (act === 'back') frame.contentWindow.history.back();
-        else if (act === 'forward') frame.contentWindow.history.forward();
-        else if (act === 'reload') frame.contentWindow.location.reload();
-      } catch (e) {
-        if (act === 'reload') frame.src = frame.src;
-      }
+      if (act === 'back') goBack(side);
+      else if (act === 'forward') goForward(side);
+      else if (act === 'reload') reloadSide(side);
     });
   });
 
@@ -296,17 +399,45 @@ function initIframeUrlSync() {
 
 // ----------------------- Iframe -> Parent messages --------------------------
 
+function findSideForSource(source) {
+  for (const side of ['left', 'right']) {
+    const frame = $(side + 'Frame');
+    if (frame && source === frame.contentWindow) return side;
+  }
+  return null;
+}
+
+function handleNavigated(side, url) {
+  if (!url || url === 'about:blank') return;
+  if (url !== state[side].url) {
+    state[side].url = url;
+    $(side + 'Url').value = url;
+    persist();
+  }
+  // pushHistory dedupes internally against the current entry, so it's safe to
+  // call unconditionally and lets us catch same-origin internal navigations
+  // that initIframeUrlSync also picked up.
+  pushHistory(side, url);
+}
+
 window.addEventListener('message', (e) => {
   const data = e.data;
   if (!data || data[TAG] !== true) return;
-  if (data.type !== 'ready') return;
-  ['left', 'right'].forEach((side) => {
-    const frame = $(side + 'Frame');
-    if (frame && e.source === frame.contentWindow) {
+  const side = findSideForSource(e.source);
+  if (!side) return;
+
+  switch (data.type) {
+    case 'ready':
       frameReady[side] = true;
       pushIframeState(side);
-    }
-  });
+      break;
+    case 'navigated':
+      handleNavigated(side, data.url);
+      break;
+    case 'scroll':
+      paneScroll[side] = { x: data.x || 0, y: data.y || 0 };
+      break;
+  }
 });
 
 // -------------------------- Background commands -----------------------------
@@ -375,6 +506,11 @@ async function init() {
   $('rightUrl').value = state.right.url;
   $('leftFrame').src  = state.left.url;
   $('rightFrame').src = state.right.url;
+
+  // Seed history with the initial URLs (content.js will also announce
+  // navigation; pushHistory dedupes so it's safe to call now too).
+  pushHistory('left',  state.left.url);
+  pushHistory('right', state.right.url);
 
   applyLayout();
   // Per-pane monochrome/hideImages are pushed via postMessage once each
