@@ -44,6 +44,10 @@ const paneScroll = {
   right: { x: 0, y: 0 }
 };
 
+// Cache of blob: URLs we created for file:// loads, so we can revoke them
+// when navigating away (otherwise memory keeps growing).
+const blobUrlCache = { left: null, right: null };
+
 const $ = (id) => document.getElementById(id);
 
 // ----------------------------- Utilities ------------------------------------
@@ -172,17 +176,80 @@ function loadIntoActive(url) {
   loadSide(side, url);
 }
 
-function loadSide(side, url) {
+async function setIframeSrc(side, url) {
+  // Revoke any previous blob URL for this pane to free memory.
+  if (blobUrlCache[side]) {
+    URL.revokeObjectURL(blobUrlCache[side]);
+    blobUrlCache[side] = null;
+  }
+
+  const frame = $(side + 'Frame');
+  if (!frame) return;
+
+  // file:// URLs can't be loaded directly in an iframe (Chromium hard-blocks
+  // this regardless of "Allow access to file URLs"). Fetch the file via the
+  // extension's own permission and hand it to the iframe as a blob: URL,
+  // which is hosted by the chrome-extension origin and therefore allowed.
+  if (/^file:\/\//i.test(url)) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok && response.status !== 0) {
+        throw new Error('HTTP ' + response.status);
+      }
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      blobUrlCache[side] = blobUrl;
+      frame.src = blobUrl;
+    } catch (e) {
+      showFileError(side, url, e && e.message ? e.message : String(e));
+    }
+    return;
+  }
+
+  frame.src = url;
+}
+
+function showFileError(side, url, detail) {
+  const html =
+    '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>読み込み失敗</title>' +
+    '<style>body{font-family:-apple-system,"Segoe UI","Yu Gothic UI",sans-serif;' +
+    'padding:24px;color:#444;line-height:1.6}h2{color:#b00;margin:0 0 12px}' +
+    'code{background:#f4f4f4;padding:2px 6px;border-radius:3px;font-size:13px;' +
+    'word-break:break-all}ul{padding-left:20px}</style></head><body>' +
+    '<h2>ローカルファイルを開けませんでした</h2>' +
+    '<p>URL: <code>' + escapeHtml(url) + '</code></p>' +
+    '<p>エラー: ' + escapeHtml(detail) + '</p>' +
+    '<p>確認してください:</p><ul>' +
+    '<li><code>edge://extensions/</code> → Stealth Split Browser の「詳細」' +
+    '→「<b>ファイルの URL へのアクセスを許可する</b>」が ON</li>' +
+    '<li>ファイルが実際にそのパスに存在する</li>' +
+    '<li>パスの区切り文字が正しい（Windows なら <code>C:\\foo\\bar.pdf</code> または' +
+    ' <code>C:/foo/bar.pdf</code>）</li></ul></body></html>';
+  const blob = new Blob([html], { type: 'text/html' });
+  const blobUrl = URL.createObjectURL(blob);
+  blobUrlCache[side] = blobUrl;
+  $(side + 'Frame').src = blobUrl;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function loadSide(side, url) {
   const u = normalizeUrl(url);
   if (!u) return;
   state[side].url = u;
   $(side + 'Url').value = u;
   frameReady[side] = false;
-  $(side + 'Frame').src = u;
   pushHistory(side, u);
   // Pane state (monochrome/hideImages) will be pushed when the iframe's
   // content script announces 'ready' (see the message listener below).
   persist();
+  await setIframeSrc(side, u);
 }
 
 function pushHistory(side, url) {
@@ -213,17 +280,22 @@ function goForward(side) {
   navigateFromHistory(side, h.stack[h.index]);
 }
 
-function navigateFromHistory(side, url) {
+async function navigateFromHistory(side, url) {
   state[side].url = url;
   $(side + 'Url').value = url;
   frameReady[side] = false;
-  $(side + 'Frame').src = url;
   persist();
+  await setIframeSrc(side, url);
 }
 
-function reloadSide(side) {
+async function reloadSide(side) {
   const url = state[side].url;
   if (!url) return;
+  // For file:// we have to refetch (the previous blob URL was point-in-time).
+  if (/^file:\/\//i.test(url)) {
+    await setIframeSrc(side, url);
+    return;
+  }
   const frame = $(side + 'Frame');
   // Same-origin pages allow contentWindow.location.reload(); for cross-origin
   // we fall back to bouncing through about:blank to force a fresh load.
@@ -409,6 +481,9 @@ function findSideForSource(source) {
 
 function handleNavigated(side, url) {
   if (!url || url === 'about:blank') return;
+  // Blob URLs are internal to our file:// loading scheme — ignore them so
+  // the URL bar and history keep showing the original file:// URL.
+  if (/^blob:/i.test(url)) return;
   if (url !== state[side].url) {
     state[side].url = url;
     $(side + 'Url').value = url;
@@ -504,8 +579,10 @@ async function init() {
 
   $('leftUrl').value  = state.left.url;
   $('rightUrl').value = state.right.url;
-  $('leftFrame').src  = state.left.url;
-  $('rightFrame').src = state.right.url;
+  // Route through setIframeSrc so file:// URLs get the blob-URL treatment
+  // and we don't hit Edge's iframe-from-extension file:// block on first load.
+  setIframeSrc('left',  state.left.url);
+  setIframeSrc('right', state.right.url);
 
   // Seed history with the initial URLs (content.js will also announce
   // navigation; pushHistory dedupes so it's safe to call now too).
