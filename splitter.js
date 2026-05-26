@@ -52,6 +52,28 @@ const $ = (id) => document.getElementById(id);
 
 // ----------------------------- Utilities ------------------------------------
 
+function extractDroppedUrl(dt) {
+  if (!dt) return null;
+  // Edge / Chrome bookmark bar drags expose the URL in several MIME types.
+  // Try the most specific first.
+  if (dt.types.includes('text/uri-list')) {
+    const list = dt.getData('text/uri-list');
+    // The format allows multiple URLs and # comments. First real line wins.
+    const url = list.split(/\r?\n/).find((l) => l && !l.startsWith('#'));
+    if (url) return url.trim();
+  }
+  if (dt.types.includes('text/x-moz-url')) {
+    // Firefox-style: "url\ntitle"
+    const first = dt.getData('text/x-moz-url').split(/\r?\n/)[0];
+    if (first) return first.trim();
+  }
+  if (dt.types.includes('text/plain')) {
+    const text = dt.getData('text/plain').trim();
+    if (text) return text;
+  }
+  return null;
+}
+
 function normalizeUrl(input) {
   const s = (input || '').trim();
   if (!s) return '';
@@ -425,7 +447,28 @@ function bind() {
     input.addEventListener('focus', () => {
       setTimeout(() => input.select(), 0);
     });
+    // Drop a bookmark / link onto the URL field → load it immediately in
+    // that pane. The dragover preventDefault is required for the drop event
+    // to fire on inputs at all.
+    input.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    input.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const url = extractDroppedUrl(e.dataTransfer);
+      if (url) {
+        input.value = url;
+        loadSide(side, url);
+      }
+    });
   });
+
+  // Global safety net: if the user drops a link anywhere else on the
+  // splitter chrome, prevent the browser from navigating the whole tab
+  // away from the splitter to that URL.
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => e.preventDefault());
 
   document.querySelectorAll('.go').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -583,6 +626,12 @@ function applyGlobalMonochrome(enabled, textColor) {
   document.documentElement.classList.toggle('stealth-monochrome', !!enabled);
 }
 
+function applyBookmarkBarVisibility(hidden) {
+  const bar = $('bookmarkBar');
+  if (!bar) return;
+  bar.classList.toggle('hidden', !!hidden);
+}
+
 function applyMonoTextColor(textColor) {
   document.documentElement.style.setProperty('--stealth-text-color', textColor || '#808080');
 }
@@ -599,6 +648,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if ('monoTextColor' in changes) {
     applyMonoTextColor(changes.monoTextColor.newValue);
   }
+  if ('bookmarkBarHidden' in changes) {
+    applyBookmarkBarVisibility(!!changes.bookmarkBarHidden.newValue);
+  }
 });
 
 // --------------------------------- Boot -------------------------------------
@@ -606,11 +658,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
 async function init() {
   const data = await chrome.storage.local.get([
     STATE_KEY, 'bookmarks', 'defaultLeftUrl', 'defaultRightUrl',
-    'globalMonochrome', 'monoTextColor'
+    'globalMonochrome', 'monoTextColor', 'bookmarkBarHidden'
   ]);
   bookmarks = data.bookmarks || [];
   applyMonoTextColor(data.monoTextColor || '#808080');
   applyGlobalMonochrome(!!data.globalMonochrome, data.monoTextColor);
+  applyBookmarkBarVisibility(!!data.bookmarkBarHidden);
 
   const dLeft  = data.defaultLeftUrl  || FALLBACK.defaultLeftUrl;
   const dRight = data.defaultRightUrl || FALLBACK.defaultRightUrl;
