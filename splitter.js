@@ -176,6 +176,10 @@ function loadIntoActive(url) {
   loadSide(side, url);
 }
 
+const DEFAULT_SANDBOX =
+  'allow-forms allow-scripts allow-same-origin allow-popups ' +
+  'allow-popups-to-escape-sandbox allow-modals allow-downloads allow-presentation';
+
 async function setIframeSrc(side, url) {
   // Revoke any previous blob URL for this pane to free memory.
   if (blobUrlCache[side]) {
@@ -183,30 +187,77 @@ async function setIframeSrc(side, url) {
     blobUrlCache[side] = null;
   }
 
-  const frame = $(side + 'Frame');
-  if (!frame) return;
-
-  // file:// URLs can't be loaded directly in an iframe (Chromium hard-blocks
-  // this regardless of "Allow access to file URLs"). Fetch the file via the
-  // extension's own permission and hand it to the iframe as a blob: URL,
-  // which is hosted by the chrome-extension origin and therefore allowed.
   if (/^file:\/\//i.test(url)) {
     try {
+      console.log('[stealth-split]', side, 'fetching', url);
       const response = await fetch(url);
+      console.log('[stealth-split]', side, 'fetch status', response.status,
+        'content-type', response.headers.get('content-type'));
       if (!response.ok && response.status !== 0) {
         throw new Error('HTTP ' + response.status);
       }
       const blob = await response.blob();
+      console.log('[stealth-split]', side, 'blob', blob.size, 'bytes, type=' + blob.type);
       const blobUrl = URL.createObjectURL(blob);
       blobUrlCache[side] = blobUrl;
-      frame.src = blobUrl;
+      // Replace the iframe element entirely. Just setting iframe.src on a
+      // previously-used sandboxed iframe doesn't reliably activate Edge's
+      // PDF viewer (that's why restarting the browser made it work — the
+      // iframe was rebuilt by the HTML parser). A brand-new <iframe>
+      // element with no sandbox attribute gets the PDF viewer to attach.
+      replaceIframe(side, blobUrl, /* withSandbox= */ false);
     } catch (e) {
+      console.error('[stealth-split]', side, 'file load failed', e);
       showFileError(side, url, e && e.message ? e.message : String(e));
     }
     return;
   }
 
+  const frame = $(side + 'Frame');
+  if (!frame) return;
+
+  // Coming back from a file:// load: the previous iframe has no sandbox.
+  // You can't reliably re-apply sandbox to an in-flight iframe, so replace
+  // the element when transitioning back into the sandboxed mode.
+  if (frame.getAttribute('sandbox') !== DEFAULT_SANDBOX) {
+    replaceIframe(side, url, /* withSandbox= */ true);
+    return;
+  }
+
   frame.src = url;
+}
+
+function replaceIframe(side, src, withSandbox) {
+  const old = $(side + 'Frame');
+  if (!old) return;
+  const fresh = document.createElement('iframe');
+  fresh.id = old.id;
+  fresh.referrerPolicy = 'no-referrer';
+  if (withSandbox) {
+    fresh.setAttribute('sandbox', DEFAULT_SANDBOX);
+  }
+  fresh.src = src;
+  old.replaceWith(fresh);
+  frameReady[side] = false;
+  attachFrameLoadListener(side);
+}
+
+function attachFrameLoadListener(side) {
+  const frame = $(side + 'Frame');
+  if (!frame) return;
+  frame.addEventListener('load', () => {
+    try {
+      const u = frame.contentWindow.location.href;
+      // Ignore about:blank and our internal blob: URLs — we don't want
+      // the blob URL leaking into state[side].url / the URL bar /
+      // persistence (that's what made restarts show the dead blob URL).
+      if (u && u !== 'about:blank' && !/^blob:/i.test(u)) {
+        state[side].url = u;
+        $(side + 'Url').value = u;
+        persist();
+      }
+    } catch (e) { /* cross-origin — ignore */ }
+  });
 }
 
 function showFileError(side, url, detail) {
@@ -368,6 +419,12 @@ function bind() {
         loadSide(side, input.value);
       }
     });
+    // Browser-address-bar UX: focusing the URL field selects its contents
+    // so the user can immediately type over them. The setTimeout defers
+    // the .select() past the mouseup that would otherwise clear it.
+    input.addEventListener('focus', () => {
+      setTimeout(() => input.select(), 0);
+    });
   });
 
   document.querySelectorAll('.go').forEach((btn) => {
@@ -454,19 +511,9 @@ function initDivider() {
 }
 
 function initIframeUrlSync() {
-  ['left', 'right'].forEach((side) => {
-    const frame = $(side + 'Frame');
-    frame.addEventListener('load', () => {
-      try {
-        const u = frame.contentWindow.location.href;
-        if (u && u !== 'about:blank') {
-          state[side].url = u;
-          $(side + 'Url').value = u;
-          persist();
-        }
-      } catch (e) { /* cross-origin — ignore */ }
-    });
-  });
+  // Delegate to attachFrameLoadListener so the blob:/about:blank filter is
+  // defined in exactly one place and applies after replaceIframe() too.
+  ['left', 'right'].forEach((side) => attachFrameLoadListener(side));
 }
 
 // ----------------------- Iframe -> Parent messages --------------------------
