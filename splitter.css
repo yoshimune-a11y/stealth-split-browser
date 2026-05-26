@@ -22,6 +22,7 @@ body { display: flex; flex-direction: column; }
   overflow-x: auto;
   white-space: nowrap;
 }
+.bookmark-bar.hidden { display: none; }
 .bookmarks { display: flex; gap: 4px; flex: 1 1 auto; min-width: 0; }
 .bookmark {
   padding: 3px 10px;

@@ -35,6 +35,9 @@
     "toggle-monochrome": {
       "suggested_key": { "default": "Alt+M" },
       "description": "モノクロ表示をトグル（全タブ対象）"
+    },
+    "toggle-bookmark-bar": {
+      "description": "ブックマークバーの表示/非表示をトグル (推奨: Alt+S, 手動バインド)"
     }
   },
   "content_scripts": [

@@ -6,6 +6,7 @@ const DEFAULTS = {
   frameUnblock: true,
   globalMonochrome: false,
   monoTextColor: '#808080',
+  bookmarkBarHidden: false,
   defaultLeftUrl: 'https://www.bing.com',
   defaultRightUrl: 'https://ja.wikipedia.org',
   bookmarks: []
@@ -76,9 +77,15 @@ async function toggleGlobalMonochrome() {
   await chrome.storage.local.set({ globalMonochrome: !globalMonochrome });
 }
 
+async function toggleBookmarkBar() {
+  const { bookmarkBarHidden } = await chrome.storage.local.get('bookmarkBarHidden');
+  await chrome.storage.local.set({ bookmarkBarHidden: !bookmarkBarHidden });
+}
+
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'open-splitter') openSplitter();
   else if (command === 'toggle-left') forwardToSplitter('toggle-left');
   else if (command === 'toggle-right') forwardToSplitter('toggle-right');
   else if (command === 'toggle-monochrome') toggleGlobalMonochrome();
+  else if (command === 'toggle-bookmark-bar') toggleBookmarkBar();
 });
