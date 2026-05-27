@@ -70,32 +70,53 @@
   // -------------------- New-tab link interception ----------------------------
   let insideSplitter = false;
 
-  function isNewTabTarget(t) {
-    if (!t) return false;
-    const v = String(t).toLowerCase();
-    return v === '_blank' || v === '_new';
-  }
-
   function navigateHere(url) {
     if (!url) return;
     try { window.location.href = url; } catch (_) { /* ignore */ }
+  }
+
+  // Read the document's <base target="..."> if present — anchors / forms
+  // without an explicit target attribute inherit this.
+  function getBaseTarget() {
+    const base = document.head && document.head.querySelector('base[target]');
+    return ((base && base.getAttribute('target')) || '').toLowerCase();
+  }
+
+  // Anything that's not "_self" (and not empty without a base override)
+  // would take navigation out of the current frame — including _blank,
+  // _new, _top, _parent, named windows, and inherited base targets.
+  function divertsOutOfFrame(explicitTarget) {
+    const t = (explicitTarget || '').toLowerCase();
+    if (t === '_self') return false;
+    if (t) return true; // _blank, _top, _parent, named
+    const base = getBaseTarget();
+    return !!base && base !== '_self';
   }
 
   function installInterceptors() {
     if (insideSplitter) return;
     insideSplitter = true;
 
+    // Click on any <a[href]> that would diverge from the current frame.
+    // Catches target=_blank, target=_top, base[target=_blank], etc.
     document.addEventListener('click', (e) => {
       if (e.defaultPrevented) return;
+      // User explicitly asked for a new tab/window → let it through.
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
       const a = e.target && e.target.closest && e.target.closest('a[href]');
       if (!a) return;
-      if (isNewTabTarget(a.getAttribute('target'))) {
-        e.preventDefault();
-        e.stopPropagation();
-        navigateHere(a.href);
-      }
+      const href = a.getAttribute('href');
+      if (!href) return;
+      // Internal hash / scripted links — let the page handle them.
+      if (href.startsWith('#') || /^javascript:/i.test(href)) return;
+      if (!divertsOutOfFrame(a.getAttribute('target'))) return;
+      e.preventDefault();
+      e.stopPropagation();
+      navigateHere(a.href);
     }, true);
 
+    // Middle-click on links is always a "new tab" gesture — divert into
+    // the current pane regardless of target.
     document.addEventListener('auxclick', (e) => {
       if (e.button !== 1) return;
       const a = e.target && e.target.closest && e.target.closest('a[href]');
@@ -105,9 +126,13 @@
       navigateHere(a.href);
     }, true);
 
+    // <form target="..."> that would diverge — rewrite to _self on submit.
     document.addEventListener('submit', (e) => {
       const form = e.target;
-      if (form && isNewTabTarget(form.target)) form.target = '_self';
+      if (!form) return;
+      if (divertsOutOfFrame(form.getAttribute('target'))) {
+        form.target = '_self';
+      }
     }, true);
 
     try {
