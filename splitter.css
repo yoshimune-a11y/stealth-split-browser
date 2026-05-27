@@ -60,6 +60,8 @@ body { display: flex; flex-direction: column; }
   flex: 1 1 auto;
   display: flex;
   min-height: 0;
+  /* Anchor for absolute-positioned hidden panes (see .pane.hidden below) */
+  position: relative;
 }
 
 .pane {
@@ -71,7 +73,17 @@ body { display: flex; flex-direction: column; }
   border-top: 2px solid transparent;
   transition: border-color 0.15s;
 }
-.pane.hidden { display: none; }
+/* Hide without display:none — that would resize the iframe to 0 then
+   back, triggering a reflow that resets scroll. Instead, lift the pane
+   out of layout (position:absolute) and park it off-screen at its
+   frozen pre-hide dimensions (set inline via JS in toggleHide). */
+.pane.hidden {
+  position: absolute !important;
+  left: -100000px !important;
+  top: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 .pane.full { flex: 1 1 100%; }
 .pane.active { border-top-color: #0078d4; }
 

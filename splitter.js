@@ -122,6 +122,23 @@ function applyLayout() {
   rightPane.classList.toggle('full', !rH && lH);
   divider.classList.toggle('hidden', lH || rH);
 
+  // For panes that are currently hidden, freeze their dimensions to the
+  // values captured at hide time (see toggleHide). This keeps the iframe
+  // inside at the same width/height across hide → show, so the embedded
+  // page doesn't reflow and lose its scroll position.
+  [
+    { pane: leftPane,  hidden: lH },
+    { pane: rightPane, hidden: rH }
+  ].forEach(({ pane, hidden }) => {
+    if (hidden && pane.dataset.frozenW) {
+      pane.style.width  = pane.dataset.frozenW + 'px';
+      pane.style.height = pane.dataset.frozenH + 'px';
+    } else if (!hidden) {
+      pane.style.width  = '';
+      pane.style.height = '';
+    }
+  });
+
   if (!lH && !rH) {
     const pct = Math.max(10, Math.min(90, state.leftPct || 50));
     leftPane.style.flex = `0 0 ${pct}%`;
@@ -396,22 +413,34 @@ function restoreScroll(side) {
 function toggleHide(side, force) {
   const newVal = (typeof force === 'boolean') ? force : !state[side].hidden;
   const wasHidden = state[side].hidden;
-  // About to hide: ask the iframe for an immediate scroll snapshot so we have
-  // a fresh value (the throttled reporter may have a stale 180ms delay).
+  const pane = $(side + 'Pane');
+
   if (!wasHidden && newVal) {
+    // About to hide: freeze the pane's current pixel dimensions so the iframe
+    // inside doesn't change size when we move it off-screen. Same size →
+    // no reflow → scroll stays put. applyLayout() reads these from dataset.
+    const rect = pane.getBoundingClientRect();
+    pane.dataset.frozenW = String(Math.round(rect.width));
+    pane.dataset.frozenH = String(Math.round(rect.height));
+    // Also push the throttled scroll-reporter to flush its latest value.
     const frame = $(side + 'Frame');
     try {
       frame.contentWindow.postMessage({ [TAG]: true, type: 'snapshot-scroll' }, '*');
     } catch (_) { /* ignore */ }
+  } else if (wasHidden && !newVal) {
+    // About to show again — clear frozen dimensions so flex sizing takes over.
+    delete pane.dataset.frozenW;
+    delete pane.dataset.frozenH;
   }
+
   state[side].hidden = newVal;
   applyLayout();
-  // If transitioning hidden → visible, restore scroll once the layout settles.
-  // The iframe is re-flowed when its container resizes back to non-zero, which
-  // can shift the visible scroll position; we push the saved value back.
+  // Scroll restore as belt-and-suspenders: even though we kept the iframe at
+  // the same size, some pages re-layout on visibility changes, so post the
+  // saved scroll twice (immediate-ish + after settle).
   if (wasHidden && !newVal) {
     setTimeout(() => restoreScroll(side), 80);
-    setTimeout(() => restoreScroll(side), 250); // belt-and-suspenders for slow reflows
+    setTimeout(() => restoreScroll(side), 250);
   }
   persist();
 }
