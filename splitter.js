@@ -271,6 +271,9 @@ function replaceIframe(side, src, withSandbox) {
   if (!old) return;
   const fresh = document.createElement('iframe');
   fresh.id = old.id;
+  // Tag the pane so content.js can early-install its navigation interceptors
+  // at document_start (see PANE_NAME in content.js).
+  fresh.name = '__stealthSplitPane';
   fresh.referrerPolicy = 'no-referrer';
   if (withSandbox) {
     fresh.setAttribute('sandbox', DEFAULT_SANDBOX);
