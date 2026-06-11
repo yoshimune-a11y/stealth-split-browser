@@ -17,6 +17,11 @@
  */
 (function () {
   const TAG = '__stealthSplit';
+  // The splitter sets this as each pane iframe's `name` attribute. Because
+  // window.name is readable synchronously at document_start (and persists
+  // across same-frame navigations), we can detect "I'm a splitter pane" and
+  // install the navigation interceptors before the page's own scripts run.
+  const PANE_NAME = '__stealthSplitPane';
 
   // --------------------------- State -----------------------------------------
   let globalMonoOn = false;
@@ -97,46 +102,53 @@
     if (insideSplitter) return;
     insideSplitter = true;
 
-    // Click on any <a[href]> that would leave the current frame. We must run
-    // in the capture phase and stopPropagation so the page's own click
-    // handler never runs — some sites (notably Google search) detect being
-    // framed and do `top.location = href`, which is blocked by the sandbox /
-    // cross-origin policy and leaves the click doing nothing. By intercepting
-    // first and navigating the iframe ourselves, the result loads in-pane.
+    // Resolve a clicked <a> to the URL we should load in-pane, or null if we
+    // should leave it to the page. We divert when the link's target would
+    // leave the frame (_blank/_top/etc.) OR the destination is cross-origin
+    // (almost always a "leave this site" link, e.g. a Google result — never
+    // SPA-internal, so navigating the iframe ourselves is safe).
+    function resolveDivertTarget(a) {
+      if (!a) return null;
+      const href = a.getAttribute('href');
+      if (!href || href.startsWith('#') || /^javascript:/i.test(href)) return null;
+      let dest;
+      try { dest = new URL(a.href, document.baseURI); } catch (_) { return null; }
+      if (dest.protocol !== 'http:' && dest.protocol !== 'https:') return null;
+      const diverts =
+        divertsOutOfFrame(a.getAttribute('target')) || dest.origin !== location.origin;
+      return diverts ? dest.href : null;
+    }
+
+    // Some sites (notably Google search) navigate on pointerdown / mousedown
+    // via delegated handlers and do `top.location = href` — which the sandbox
+    // / cross-origin policy blocks, so the click silently does nothing. We
+    // register in the CAPTURE phase and (thanks to the window.name early
+    // install) before the page's own scripts run, then stopPropagation so
+    // those handlers never see the event. We deliberately do NOT preventDefault
+    // here, so the natural click still fires into our click handler below.
+    function killEarly(e) {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.button && e.button !== 0) return; // primary button only
+      const a = e.target && e.target.closest && e.target.closest('a[href]');
+      if (!a || !resolveDivertTarget(a)) return;
+      e.stopPropagation();
+    }
+    document.addEventListener('pointerdown', killEarly, true);
+    document.addEventListener('mousedown', killEarly, true);
+
+    // Primary click on a diverting link → load it in this pane.
     document.addEventListener('click', (e) => {
       if (e.defaultPrevented) return;
-      // User explicitly asked for a new tab/window → let it through.
-      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return; // user wants a new tab
       const a = e.target && e.target.closest && e.target.closest('a[href]');
-      if (!a) return;
-      const href = a.getAttribute('href');
-      if (!href) return;
-      // Internal hash / scripted links — let the page handle them.
-      if (href.startsWith('#') || /^javascript:/i.test(href)) return;
-
-      let dest;
-      try { dest = new URL(a.href, document.baseURI); } catch (_) { return; }
-      if (dest.protocol !== 'http:' && dest.protocol !== 'https:') return;
-
-      // Two reasons to take over the navigation:
-      //  1. An explicit/inherited target that would leave the frame
-      //     (_blank, _top, _parent, named, base[target]).
-      //  2. A cross-origin destination — almost always a "leave this site"
-      //     link (e.g. a Google result pointing at an external site). These
-      //     are never SPA-internal, so navigating the iframe ourselves is
-      //     safe, and doing it first prevents the page's JS from trying to
-      //     navigate the top frame.
-      const divertsByTarget = divertsOutOfFrame(a.getAttribute('target'));
-      const crossOrigin = dest.origin !== location.origin;
-      if (!divertsByTarget && !crossOrigin) return;
-
+      const url = resolveDivertTarget(a);
+      if (!url) return;
       e.preventDefault();
       e.stopPropagation();
-      navigateHere(dest.href);
+      navigateHere(url);
     }, true);
 
-    // Middle-click on links is always a "new tab" gesture — divert into
-    // the current pane regardless of target.
+    // Middle-click on links is always a "new tab" gesture — divert into pane.
     document.addEventListener('auxclick', (e) => {
       if (e.button !== 1) return;
       const a = e.target && e.target.closest && e.target.closest('a[href]');
@@ -235,4 +247,12 @@
   // Same-document URL changes (SPA / hash) — best-effort tracking
   window.addEventListener('hashchange', announceNavigated);
   window.addEventListener('popstate', announceNavigated);
+
+  // Early, synchronous install: if the parent tagged this iframe via its
+  // name attribute, we're a splitter pane. Installing here — at document_start,
+  // before any page script executes — lets our capture-phase listeners win the
+  // race against the page's delegated pointerdown/mousedown navigation. The
+  // postMessage handshake above still calls installInterceptors() as a fallback
+  // (e.g. if the page overwrites window.name).
+  if (window.name === PANE_NAME) installInterceptors();
 })();

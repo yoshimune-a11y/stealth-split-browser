@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stealth Split Browser",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "1つのタブを分割して2サイトを同時閲覧。ペインごとにモノクロ/画像非表示。ブックマーク・広告ブロック対応。",
   "permissions": [
     "storage",
