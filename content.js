@@ -97,8 +97,12 @@
     if (insideSplitter) return;
     insideSplitter = true;
 
-    // Click on any <a[href]> that would diverge from the current frame.
-    // Catches target=_blank, target=_top, base[target=_blank], etc.
+    // Click on any <a[href]> that would leave the current frame. We must run
+    // in the capture phase and stopPropagation so the page's own click
+    // handler never runs — some sites (notably Google search) detect being
+    // framed and do `top.location = href`, which is blocked by the sandbox /
+    // cross-origin policy and leaves the click doing nothing. By intercepting
+    // first and navigating the iframe ourselves, the result loads in-pane.
     document.addEventListener('click', (e) => {
       if (e.defaultPrevented) return;
       // User explicitly asked for a new tab/window → let it through.
@@ -109,10 +113,26 @@
       if (!href) return;
       // Internal hash / scripted links — let the page handle them.
       if (href.startsWith('#') || /^javascript:/i.test(href)) return;
-      if (!divertsOutOfFrame(a.getAttribute('target'))) return;
+
+      let dest;
+      try { dest = new URL(a.href, document.baseURI); } catch (_) { return; }
+      if (dest.protocol !== 'http:' && dest.protocol !== 'https:') return;
+
+      // Two reasons to take over the navigation:
+      //  1. An explicit/inherited target that would leave the frame
+      //     (_blank, _top, _parent, named, base[target]).
+      //  2. A cross-origin destination — almost always a "leave this site"
+      //     link (e.g. a Google result pointing at an external site). These
+      //     are never SPA-internal, so navigating the iframe ourselves is
+      //     safe, and doing it first prevents the page's JS from trying to
+      //     navigate the top frame.
+      const divertsByTarget = divertsOutOfFrame(a.getAttribute('target'));
+      const crossOrigin = dest.origin !== location.origin;
+      if (!divertsByTarget && !crossOrigin) return;
+
       e.preventDefault();
       e.stopPropagation();
-      navigateHere(a.href);
+      navigateHere(dest.href);
     }, true);
 
     // Middle-click on links is always a "new tab" gesture — divert into
