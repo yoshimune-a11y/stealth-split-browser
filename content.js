@@ -101,12 +101,31 @@
   function installInterceptors() {
     if (insideSplitter) return;
     insideSplitter = true;
+    // DIAGNOSTIC (temporary): confirms interceptors loaded in this pane and
+    // whether the early window.name path or the postMessage fallback fired.
+    try {
+      console.log('[stealth-split] interceptors installed; window.name=',
+        window.name, 'url=', location.href);
+    } catch (_) { /* ignore */ }
+
+    // Google search result links are same-origin redirects of the form
+    // https://www.google.<tld>/url?q=REAL_URL (or ?url=REAL_URL). Detect them
+    // and extract the real destination so we can load it directly in-pane.
+    function unwrapRedirect(u) {
+      try {
+        if (/(^|\.)google\.[a-z.]+$/i.test(u.hostname) && u.pathname === '/url') {
+          const real = u.searchParams.get('q') || u.searchParams.get('url');
+          if (real && /^https?:\/\//i.test(real)) return real;
+        }
+      } catch (_) { /* ignore */ }
+      return null;
+    }
 
     // Resolve a clicked <a> to the URL we should load in-pane, or null if we
     // should leave it to the page. We divert when the link's target would
-    // leave the frame (_blank/_top/etc.) OR the destination is cross-origin
-    // (almost always a "leave this site" link, e.g. a Google result — never
-    // SPA-internal, so navigating the iframe ourselves is safe).
+    // leave the frame (_blank/_top/etc.), the destination is cross-origin, OR
+    // it's a recognized same-origin redirect wrapper (Google /url) pointing at
+    // an external site.
     function resolveDivertTarget(a) {
       if (!a) return null;
       const href = a.getAttribute('href');
@@ -114,9 +133,12 @@
       let dest;
       try { dest = new URL(a.href, document.baseURI); } catch (_) { return null; }
       if (dest.protocol !== 'http:' && dest.protocol !== 'https:') return null;
+      const unwrapped = unwrapRedirect(dest);
+      const crossOrigin = dest.origin !== location.origin;
       const diverts =
-        divertsOutOfFrame(a.getAttribute('target')) || dest.origin !== location.origin;
-      return diverts ? dest.href : null;
+        divertsOutOfFrame(a.getAttribute('target')) || crossOrigin || !!unwrapped;
+      if (!diverts) return null;
+      return unwrapped || dest.href;
     }
 
     // Some sites (notably Google search) navigate on pointerdown / mousedown
@@ -137,11 +159,23 @@
     document.addEventListener('mousedown', killEarly, true);
 
     // Primary click on a diverting link → load it in this pane.
+    // NOTE: we intentionally do NOT bail on e.defaultPrevented — some pages
+    // (Google) preventDefault in their own handler and navigate the top frame
+    // via JS, so we must still take over.
     document.addEventListener('click', (e) => {
-      if (e.defaultPrevented) return;
       if (e.ctrlKey || e.metaKey || e.shiftKey) return; // user wants a new tab
       const a = e.target && e.target.closest && e.target.closest('a[href]');
-      const url = resolveDivertTarget(a);
+      const url = a ? resolveDivertTarget(a) : null;
+      // DIAGNOSTIC (temporary): reveals why a click did or didn't divert.
+      try {
+        console.log('[stealth-split] click', {
+          foundAnchor: !!a,
+          rawHref: a ? a.getAttribute('href') : null,
+          resolvedHref: a ? a.href : null,
+          divertTo: url,
+          pageOrigin: location.origin
+        });
+      } catch (_) { /* ignore */ }
       if (!url) return;
       e.preventDefault();
       e.stopPropagation();
