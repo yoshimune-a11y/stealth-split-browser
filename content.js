@@ -152,7 +152,22 @@
       if (e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (e.button && e.button !== 0) return; // primary button only
       const a = e.target && e.target.closest && e.target.closest('a[href]');
-      if (!a || !resolveDivertTarget(a)) return;
+      const url = a ? resolveDivertTarget(a) : null;
+      // DIAGNOSTIC (temporary): Google navigates on pointerdown, so this fires
+      // first and tells us what the result link looks like.
+      if (e.type === 'pointerdown') {
+        try {
+          console.log('[stealth-split] pointerdown', {
+            foundAnchor: !!a, rawHref: a ? a.getAttribute('href') : null,
+            resolvedHref: a ? a.href : null, divertTo: url
+          });
+        } catch (_) { /* ignore */ }
+      }
+      if (!url) return;
+      // stopImmediatePropagation also blocks other listeners on this same node,
+      // not just descendants — stronger than stopPropagation for killing the
+      // page's delegated navigation handler.
+      e.stopImmediatePropagation();
       e.stopPropagation();
     }
     document.addEventListener('pointerdown', killEarly, true);
@@ -178,6 +193,7 @@
       } catch (_) { /* ignore */ }
       if (!url) return;
       e.preventDefault();
+      e.stopImmediatePropagation();
       e.stopPropagation();
       navigateHere(url);
     }, true);
@@ -282,11 +298,33 @@
   window.addEventListener('hashchange', announceNavigated);
   window.addEventListener('popstate', announceNavigated);
 
-  // Early, synchronous install: if the parent tagged this iframe via its
-  // name attribute, we're a splitter pane. Installing here — at document_start,
-  // before any page script executes — lets our capture-phase listeners win the
-  // race against the page's delegated pointerdown/mousedown navigation. The
-  // postMessage handshake above still calls installInterceptors() as a fallback
-  // (e.g. if the page overwrites window.name).
-  if (window.name === PANE_NAME) installInterceptors();
+  // Are we a splitter pane? Prefer location.ancestorOrigins (reliable, set by
+  // the browser, can't be overwritten by the page) — it lists the origins of
+  // ancestor frames, so a pane's first ancestor is our extension origin. Fall
+  // back to the window.name tag for any engine without ancestorOrigins.
+  function inSplitterPane() {
+    try {
+      const ao = location.ancestorOrigins;
+      if (ao && ao.length) {
+        const me = 'chrome-extension://' + chrome.runtime.id;
+        for (let i = 0; i < ao.length; i++) {
+          if (ao[i] === me) return true;
+        }
+      }
+    } catch (_) { /* ignore */ }
+    return window.name === PANE_NAME;
+  }
+
+  // Early, synchronous install at document_start — before any page script
+  // executes — so our capture-phase listeners win the race against the page's
+  // delegated pointerdown/mousedown navigation. The postMessage handshake above
+  // still calls installInterceptors() as a fallback.
+  if (window !== window.top) {
+    try {
+      console.log('[stealth-split] boot; isPane=', inSplitterPane(),
+        'ancestorOrigins=', (location.ancestorOrigins && Array.from(location.ancestorOrigins)),
+        'name=', window.name, 'url=', location.href);
+    } catch (_) { /* ignore */ }
+  }
+  if (inSplitterPane()) installInterceptors();
 })();
