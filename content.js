@@ -23,6 +23,34 @@
   // install the navigation interceptors before the page's own scripts run.
   const PANE_NAME = '__stealthSplitPane';
 
+  // ----------------------------------------------------------------------
+  // Google /url redirect interstitial — robust safety net.
+  //
+  // Google search result links are <a href="/url?...&url=REAL_URL">. Clicking
+  // one navigates this frame to google.com/url?..., whose inline script does
+  // `top.location = REAL_URL`. In our sandboxed pane that ancestor navigation
+  // is blocked (SecurityError), so the frame gets stuck on the /url page.
+  //
+  // Whenever we find ourselves framed on a Google /url page, extract the real
+  // destination and redirect THIS frame to it. Runs at document_start, before
+  // (or right after) Google's failing script, so the result loads in-pane
+  // regardless of whether the click interceptor caught the original anchor.
+  // ----------------------------------------------------------------------
+  (function handleGoogleRedirectInterstitial() {
+    if (window === window.top) return; // only when framed
+    try {
+      const l = window.location;
+      if (/(^|\.)google\.[a-z.]+$/i.test(l.hostname) && l.pathname === '/url') {
+        const p = new URLSearchParams(l.search);
+        const real = p.get('url') || p.get('q');
+        if (real && /^https?:\/\//i.test(real)) {
+          try { console.log('[stealth-split] /url interstitial → redirecting to', real); } catch (_) {}
+          window.location.replace(real);
+        }
+      }
+    } catch (_) { /* ignore */ }
+  })();
+
   // --------------------------- State -----------------------------------------
   let globalMonoOn = false;
   let paneMonoOn = false;
