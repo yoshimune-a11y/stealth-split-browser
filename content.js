@@ -17,6 +17,11 @@
  */
 (function () {
   const TAG = '__stealthSplit';
+  // The splitter sets this as each pane iframe's `name` attribute. Because
+  // window.name is readable synchronously at document_start (and persists
+  // across same-frame navigations), we can detect "I'm a splitter pane" and
+  // install the navigation interceptors before the page's own scripts run.
+  const PANE_NAME = '__stealthSplitPane';
 
   // --------------------------- State -----------------------------------------
   let globalMonoOn = false;
@@ -96,47 +101,104 @@
   function installInterceptors() {
     if (insideSplitter) return;
     insideSplitter = true;
+    // DIAGNOSTIC (temporary): confirms interceptors loaded in this pane and
+    // whether the early window.name path or the postMessage fallback fired.
+    try {
+      console.log('[stealth-split] interceptors installed; window.name=',
+        window.name, 'url=', location.href);
+    } catch (_) { /* ignore */ }
 
-    // Click on any <a[href]> that would leave the current frame. We must run
-    // in the capture phase and stopPropagation so the page's own click
-    // handler never runs — some sites (notably Google search) detect being
-    // framed and do `top.location = href`, which is blocked by the sandbox /
-    // cross-origin policy and leaves the click doing nothing. By intercepting
-    // first and navigating the iframe ourselves, the result loads in-pane.
-    document.addEventListener('click', (e) => {
-      if (e.defaultPrevented) return;
-      // User explicitly asked for a new tab/window → let it through.
-      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-      const a = e.target && e.target.closest && e.target.closest('a[href]');
-      if (!a) return;
+    // Google search result links are same-origin redirects of the form
+    // https://www.google.<tld>/url?q=REAL_URL (or ?url=REAL_URL). Detect them
+    // and extract the real destination so we can load it directly in-pane.
+    function unwrapRedirect(u) {
+      try {
+        if (/(^|\.)google\.[a-z.]+$/i.test(u.hostname) && u.pathname === '/url') {
+          const real = u.searchParams.get('q') || u.searchParams.get('url');
+          if (real && /^https?:\/\//i.test(real)) return real;
+        }
+      } catch (_) { /* ignore */ }
+      return null;
+    }
+
+    // Resolve a clicked <a> to the URL we should load in-pane, or null if we
+    // should leave it to the page. We divert when the link's target would
+    // leave the frame (_blank/_top/etc.), the destination is cross-origin, OR
+    // it's a recognized same-origin redirect wrapper (Google /url) pointing at
+    // an external site.
+    function resolveDivertTarget(a) {
+      if (!a) return null;
       const href = a.getAttribute('href');
-      if (!href) return;
-      // Internal hash / scripted links — let the page handle them.
-      if (href.startsWith('#') || /^javascript:/i.test(href)) return;
-
+      if (!href || href.startsWith('#') || /^javascript:/i.test(href)) return null;
       let dest;
-      try { dest = new URL(a.href, document.baseURI); } catch (_) { return; }
-      if (dest.protocol !== 'http:' && dest.protocol !== 'https:') return;
-
-      // Two reasons to take over the navigation:
-      //  1. An explicit/inherited target that would leave the frame
-      //     (_blank, _top, _parent, named, base[target]).
-      //  2. A cross-origin destination — almost always a "leave this site"
-      //     link (e.g. a Google result pointing at an external site). These
-      //     are never SPA-internal, so navigating the iframe ourselves is
-      //     safe, and doing it first prevents the page's JS from trying to
-      //     navigate the top frame.
-      const divertsByTarget = divertsOutOfFrame(a.getAttribute('target'));
+      try { dest = new URL(a.href, document.baseURI); } catch (_) { return null; }
+      if (dest.protocol !== 'http:' && dest.protocol !== 'https:') return null;
+      const unwrapped = unwrapRedirect(dest);
       const crossOrigin = dest.origin !== location.origin;
-      if (!divertsByTarget && !crossOrigin) return;
+      const diverts =
+        divertsOutOfFrame(a.getAttribute('target')) || crossOrigin || !!unwrapped;
+      if (!diverts) return null;
+      return unwrapped || dest.href;
+    }
 
-      e.preventDefault();
+    // Some sites (notably Google search) navigate on pointerdown / mousedown
+    // via delegated handlers and do `top.location = href` — which the sandbox
+    // / cross-origin policy blocks, so the click silently does nothing. We
+    // register in the CAPTURE phase and (thanks to the window.name early
+    // install) before the page's own scripts run, then stopPropagation so
+    // those handlers never see the event. We deliberately do NOT preventDefault
+    // here, so the natural click still fires into our click handler below.
+    function killEarly(e) {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.button && e.button !== 0) return; // primary button only
+      const a = e.target && e.target.closest && e.target.closest('a[href]');
+      const url = a ? resolveDivertTarget(a) : null;
+      // DIAGNOSTIC (temporary): Google navigates on pointerdown, so this fires
+      // first and tells us what the result link looks like.
+      if (e.type === 'pointerdown') {
+        try {
+          console.log('[stealth-split] pointerdown', {
+            foundAnchor: !!a, rawHref: a ? a.getAttribute('href') : null,
+            resolvedHref: a ? a.href : null, divertTo: url
+          });
+        } catch (_) { /* ignore */ }
+      }
+      if (!url) return;
+      // stopImmediatePropagation also blocks other listeners on this same node,
+      // not just descendants — stronger than stopPropagation for killing the
+      // page's delegated navigation handler.
+      e.stopImmediatePropagation();
       e.stopPropagation();
-      navigateHere(dest.href);
+    }
+    document.addEventListener('pointerdown', killEarly, true);
+    document.addEventListener('mousedown', killEarly, true);
+
+    // Primary click on a diverting link → load it in this pane.
+    // NOTE: we intentionally do NOT bail on e.defaultPrevented — some pages
+    // (Google) preventDefault in their own handler and navigate the top frame
+    // via JS, so we must still take over.
+    document.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return; // user wants a new tab
+      const a = e.target && e.target.closest && e.target.closest('a[href]');
+      const url = a ? resolveDivertTarget(a) : null;
+      // DIAGNOSTIC (temporary): reveals why a click did or didn't divert.
+      try {
+        console.log('[stealth-split] click', {
+          foundAnchor: !!a,
+          rawHref: a ? a.getAttribute('href') : null,
+          resolvedHref: a ? a.href : null,
+          divertTo: url,
+          pageOrigin: location.origin
+        });
+      } catch (_) { /* ignore */ }
+      if (!url) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      navigateHere(url);
     }, true);
 
-    // Middle-click on links is always a "new tab" gesture — divert into
-    // the current pane regardless of target.
+    // Middle-click on links is always a "new tab" gesture — divert into pane.
     document.addEventListener('auxclick', (e) => {
       if (e.button !== 1) return;
       const a = e.target && e.target.closest && e.target.closest('a[href]');
@@ -235,4 +297,34 @@
   // Same-document URL changes (SPA / hash) — best-effort tracking
   window.addEventListener('hashchange', announceNavigated);
   window.addEventListener('popstate', announceNavigated);
+
+  // Are we a splitter pane? Prefer location.ancestorOrigins (reliable, set by
+  // the browser, can't be overwritten by the page) — it lists the origins of
+  // ancestor frames, so a pane's first ancestor is our extension origin. Fall
+  // back to the window.name tag for any engine without ancestorOrigins.
+  function inSplitterPane() {
+    try {
+      const ao = location.ancestorOrigins;
+      if (ao && ao.length) {
+        const me = 'chrome-extension://' + chrome.runtime.id;
+        for (let i = 0; i < ao.length; i++) {
+          if (ao[i] === me) return true;
+        }
+      }
+    } catch (_) { /* ignore */ }
+    return window.name === PANE_NAME;
+  }
+
+  // Early, synchronous install at document_start — before any page script
+  // executes — so our capture-phase listeners win the race against the page's
+  // delegated pointerdown/mousedown navigation. The postMessage handshake above
+  // still calls installInterceptors() as a fallback.
+  if (window !== window.top) {
+    try {
+      console.log('[stealth-split] boot; isPane=', inSplitterPane(),
+        'ancestorOrigins=', (location.ancestorOrigins && Array.from(location.ancestorOrigins)),
+        'name=', window.name, 'url=', location.href);
+    } catch (_) { /* ignore */ }
+  }
+  if (inSplitterPane()) installInterceptors();
 })();
